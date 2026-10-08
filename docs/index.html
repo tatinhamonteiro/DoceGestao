@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f9dce2">
+  <title>Doce Gestão</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧁</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <!-- Login -->
+  <div id="telaLogin" class="login oculto">
+    <form class="card" id="formLogin">
+      <div class="logo">🧁</div>
+      <h1>Doce Gestão</h1>
+      <p class="suave">Orçamentos, aprovações e pagamentos pelo WhatsApp</p>
+      <input class="ctl" type="email" id="email" placeholder="E-mail" autocomplete="username" required style="margin:14px 0 8px">
+      <input class="ctl" type="password" id="senha" placeholder="Senha" autocomplete="current-password" required minlength="6" style="margin:0 0 14px">
+      <button class="btn bloco" id="btnEntrar">Entrar</button>
+      <p style="margin:14px 0 0"><a href="#" id="trocarModo">Primeiro acesso? Criar conta</a></p>
+      <p style="margin:8px 0 0"><a href="#" id="esqueci" class="suave">Esqueci a senha</a></p>
+    </form>
+  </div>
+
+  <!-- App -->
+  <div id="telaApp" class="app oculto">
+    <header class="topo">
+      <button class="voltar oculto" id="btnVoltar" aria-label="Voltar">‹</button>
+      <h1 id="titulo">Orçamentos</h1>
+      <div class="icone" id="iconeTopo">🧁</div>
+    </header>
+    <main id="conteudo"></main>
+    <nav class="nav">
+      <button data-rota="orcamentos"><span class="i">📝</span>Orçamentos</button>
+      <button data-rota="pagamentos"><span class="i">💳</span>Pagamentos<span class="badge oculto" id="badgePag"></span></button>
+      <button data-rota="dashboard"><span class="i">📊</span>Painel</button>
+      <button data-rota="clientes"><span class="i">👥</span>Clientes</button>
+      <button data-rota="ajustes"><span class="i">⚙️</span>Ajustes<span class="badge oculto" id="badgeAjustes">!</span></button>
+    </nav>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/comum.js"></script>
+  <script src="js/dados.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

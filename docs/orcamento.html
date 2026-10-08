@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f9dce2">
+  <meta name="robots" content="noindex">
+  <title>Seu orçamento</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧁</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+  <style>
+    .app { padding-bottom: 30px; }
+    .pix { background: #fff; border: 2px dashed #f6c3cf; border-radius: 14px; padding: 16px; text-align: center; }
+    .pix #qr { display: inline-block; padding: 10px; background: #fff; border-radius: 10px; margin: 8px 0; }
+    .pix textarea { width: 100%; font-size: .75rem; min-height: 64px; border: 1px solid var(--borda); border-radius: 8px; padding: 8px; word-break: break-all; }
+    .ok { text-align: center; padding: 20px 10px; }
+    .ok .grande { font-size: 3rem; }
+    .upload { display: block; border: 2px dashed var(--borda); border-radius: 14px; padding: 22px; text-align: center; cursor: pointer; background: #fff; }
+    .upload:hover { border-color: var(--rosa); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topo"><div class="icone">🧁</div><h1 id="loja">Orçamento</h1><div class="icone">🍰</div></header>
+    <main id="conteudo"><div class="spinner">Carregando…</div></main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/comum.js"></script>
+  <script>
+  'use strict';
+  const $ = s => document.querySelector(s);
+  const token = new URLSearchParams(location.search).get('t') || '';
+  const moeda = v => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(+v || 0);
+  const dia = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '';
+  const qtd = q => Number(q) % 1 === 0 ? String(Number(q)) : Number(q).toLocaleString('pt-BR');
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const toast = (m, erro) => { const t = document.createElement('div'); t.className = 'toast' + (erro ? ' erro' : ''); t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 3500); };
+
+  // Acesso ao Supabase: só funções públicas, sempre pelo código (token) do pedido
+  async function chamar(metodo, sufixo, corpo) {
+    const sb = Doce.sb;
+    if (!sb || !/^[0-9a-f]{32}$/.test(token)) throw new Error('Orçamento não encontrado.');
+    const rpc = async (fn, args) => {
+      const { data, error } = await sb.rpc(fn, args);
+      if (error) throw new Error(Doce.erroAmigavel(error));
+      return data;
+    };
+    if (sufixo === '') {
+      const o = await rpc('publico_orcamento', { p_token: token });
+      if (!o) throw new Error('Orçamento não encontrado.');
+      const podePagar = ['Rascunho', 'Enviado', 'Aprovado'].includes(o.status) && o.saldo > 0;
+      o.pixCopiaECola = podePagar ? Doce.pixCopiaECola({ chave: o.chavePix, nome: o.nomeRecebedorPix, cidade: o.cidade, valor: o.saldo, txid: 'PED' + o.numero }) : null;
+      if (!podePagar) o.chavePix = null;
+      return o;
+    }
+    if (sufixo === '/aprovar') return rpc('publico_aprovar', { p_token: token });
+    if (sufixo === '/recusar') return rpc('publico_recusar', { p_token: token, p_motivo: corpo?.motivo || null });
+    if (sufixo === '/comprovante') {
+      const arq = corpo.get('arquivo');
+      const tipos = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'application/pdf': 'pdf' };
+      if (!arq || !tipos[arq.type] || arq.size > 10 * 1024 * 1024) throw new Error('Envie uma foto (JPG/PNG) ou PDF de até 10 MB.');
+      const caminho = `${token}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${tipos[arq.type]}`;
+      const up = await sb.storage.from('comprovantes').upload(caminho, arq, { contentType: arq.type });
+      if (up.error) throw new Error('Não foi possível enviar o arquivo. Tente novamente.');
+      return rpc('publico_comprovante', { p_token: token, p_path: caminho, p_mime: arq.type });
+    }
+  }
+
+
+  // Link de volta para a conversa com a loja, já com a mensagem escrita
+  const linkWhats = (o, texto) => o.whatsLoja
+    ? `https://wa.me/${o.whatsLoja}?text=${encodeURIComponent(texto)}`
+    : `https://wa.me/?text=${encodeURIComponent(texto)}`;
+  const botaoWhats = (o, texto, rotulo) =>
+    `<a class="btn bloco verde" href="${linkWhats(o, texto)}">🟢 ${rotulo}</a>`;
+
+  function telaConcluida(o, valor) {
+    const texto = `Olá! Acabei de enviar o comprovante do pedido #${o.numero} (${moeda(valor)}) pelo link. 😊`;
+    $('#conteudo').innerHTML = `
+      <div class="ok" style="padding-top:40px">
+        <div class="grande">✅</div>
+        <h2 style="color:var(--vinho);margin:8px 0">Comprovante enviado!</h2>
+        <p>A <b>${esc(o.loja)}</b> já recebeu e vai confirmar o pagamento do pedido <b>#${o.numero}</b>.</p>
+        <p class="suave" id="contagem">Voltando para o WhatsApp em <b>3</b>…</p>
+      </div>
+      <div class="botoes">
+        ${botaoWhats(o, texto, 'Voltar para o WhatsApp')}
+        <button class="btn bloco claro" id="ficar">Ficar nesta página</button>
+      </div>`;
+    let n = 3;
+    const t = setInterval(() => {
+      n--;
+      if (n > 0) { $('#contagem').innerHTML = `Voltando para o WhatsApp em <b>${n}</b>…`; return; }
+      clearInterval(t);
+      location.href = linkWhats(o, texto);
+    }, 1000);
+    $('#ficar').onclick = () => { clearInterval(t); carregar(); };
+  }
+
+  async function carregar() {
+    let o;
+    try { o = await chamar('GET', ''); }
+    catch (e) { $('#conteudo').innerHTML = `<div class="vazio"><span class="grande">😕</span>${esc(e.message)}</div>`; return; }
+    $('#loja').textContent = o.loja;
+    document.title = `Pedido #${o.numero} · ${o.loja}`;
+
+    const aguardando = ['Rascunho', 'Enviado'].includes(o.status);
+    const fechado = ['Recusado', 'Cancelado'].includes(o.status);
+
+    let topoMsg = '';
+    if (aguardando) topoMsg = `<p>Olá, <b>${esc(o.cliente)}</b>! Confira seu orçamento e toque em <b>Aprovar</b> para confirmar o pedido. 😊</p>`;
+    if (o.status === 'Aprovado') topoMsg = `<div class="ok"><div class="grande">✅</div><b>Pedido aprovado!</b><br><span class="suave">${o.saldo > 0 ? 'Faça o pagamento abaixo e envie o comprovante.' : ''}</span></div>`;
+    if (o.status === 'Pago') topoMsg = `<div class="ok"><div class="grande">🎉</div><b>Pagamento confirmado!</b><br><span class="suave">Obrigado pela preferência.</span></div>`;
+    if (fechado) topoMsg = `<div class="ok"><div class="grande">📭</div><b>Este orçamento não está mais ativo.</b><br><span class="suave">Fale com a loja se quiser um novo.</span></div>`;
+
+    $('#conteudo').innerHTML = `
+      ${topoMsg}
+      <div class="card">
+        <div class="linha"><span class="forte">Pedido #${o.numero}</span>${o.dataEntrega ? `<span class="suave">Entrega: <b>${dia(o.dataEntrega)}</b></span>` : ''}</div>
+        ${o.descricao ? `<div style="margin-top:8px">${esc(o.descricao)}</div>` : ''}
+      </div>
+      <div class="secao">Itens do orçamento</div>
+      <div class="lista">
+        ${o.itens.map(i => `<div class="li"><span class="nome" style="font-weight:700">${qtd(i.quantidade)}× ${esc(i.descricao)}</span><span class="valor">${moeda(i.subtotal)}</span></div>`).join('')}
+        ${o.desconto > 0 ? `<div class="li"><span class="nome suave">Desconto</span><span class="valor">− ${moeda(o.desconto)}</span></div>` : ''}
+      </div>
+      <div class="total"><span>Total:</span><strong>${moeda(o.total)}</strong></div>
+      ${o.valorPago > 0 ? `<div class="linha"><span>Já pago</span><span class="valor" style="color:var(--verde)">${moeda(o.valorPago)}</span></div>` : ''}
+      ${o.valorAConfirmar > 0 ? `<div class="aviso" style="margin-top:10px">🧾 Recebemos seu comprovante de ${moeda(o.valorAConfirmar)}. Estamos conferindo!</div>` : ''}
+      ${(o.status === 'Pago' || o.valorAConfirmar > 0) ? `<div class="botoes">${botaoWhats(o, `Olá! Sobre o pedido #${o.numero}:`, 'Voltar para o WhatsApp')}</div>` : ''}
+      ${o.vencimento && o.saldo > 0 && !fechado ? `<div class="suave" style="text-align:right">Pagamento até ${dia(o.vencimento)}</div>` : ''}
+
+      ${aguardando ? `
+        <div class="botoes">
+          <button class="btn bloco verde" id="aprovar">✅ Aprovar orçamento</button>
+          <button class="btn bloco claro" id="recusar">Não vou seguir agora</button>
+        </div>` : ''}
+
+      ${o.status === 'Aprovado' && o.saldo > 0 ? `
+        <div class="secao">💳 Pagamento</div>
+        ${o.pixCopiaECola ? `
+          <div class="pix">
+            <div class="forte">PIX de ${moeda(o.saldo)}</div>
+            <div id="qr"></div>
+            <div class="suave" style="margin-bottom:6px">PIX copia e cola</div>
+            <textarea readonly id="pixCod">${esc(o.pixCopiaECola)}</textarea>
+            <button class="btn bloco" id="copiarPix" style="margin-top:8px">📋 Copiar código PIX</button>
+            <div class="suave" style="margin-top:8px">Chave: <b>${esc(o.chavePix)}</b></div>
+          </div>` : `<div class="aviso">Combine a forma de pagamento com a loja pelo WhatsApp.</div>`}
+        <div class="secao">🧾 Enviar comprovante</div>
+        <label class="upload" id="lblArq">
+          <input type="file" id="arquivo" accept="image/*,application/pdf" hidden>
+          <div style="font-size:2rem">📎</div>
+          <b id="nomeArq">Toque para escolher a foto ou PDF</b>
+        </label>
+        <button class="btn bloco verde" id="enviarComp" style="margin-top:10px" disabled>Enviar comprovante</button>
+        <div class="suave" style="text-align:center;margin:14px 0 8px">ou</div>
+        ${botaoWhats(o, `Olá! Segue o comprovante do pedido #${o.numero} (${moeda(o.saldo)}):`, 'Enviar o comprovante pelo WhatsApp').replace('btn bloco verde', 'btn bloco claro')}` : ''}
+    `;
+
+    const on = (s, f) => { const el = $(s); if (el) el.onclick = f; };
+    on('#aprovar', async () => {
+      try { await chamar('POST', '/aprovar'); toast('Pedido aprovado! Obrigado 💕'); carregar(); } catch (e) { toast(e.message, true); }
+    });
+    on('#recusar', async () => {
+      const motivo = prompt('Quer contar o motivo? (opcional)');
+      if (motivo === null) return;
+      try { await chamar('POST', '/recusar', { motivo }); carregar(); } catch (e) { toast(e.message, true); }
+    });
+    on('#copiarPix', () => {
+      const t = $('#pixCod'); t.select();
+      (navigator.clipboard?.writeText(t.value) || Promise.reject()).then(() => toast('Código PIX copiado!'), () => { document.execCommand('copy'); toast('Código PIX copiado!'); });
+    });
+    if ($('#qr') && window.QRCode) new QRCode($('#qr'), { text: o.pixCopiaECola, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
+
+    const arq = $('#arquivo');
+    if (arq) {
+      arq.onchange = () => { $('#nomeArq').textContent = arq.files[0]?.name || 'Toque para escolher a foto ou PDF'; $('#enviarComp').disabled = !arq.files.length; };
+      on('#enviarComp', async () => {
+        const fd = new FormData(); fd.append('arquivo', arq.files[0]);
+        $('#enviarComp').disabled = true; $('#enviarComp').textContent = 'Enviando…';
+        try { await chamar('POST', '/comprovante', fd, true); telaConcluida(o, o.saldo); }
+        catch (e) { toast(e.message, true); $('#enviarComp').disabled = false; $('#enviarComp').textContent = 'Enviar comprovante'; }
+      });
+    }
+  }
+  carregar();
+  </script>
+</body>
+</html>
