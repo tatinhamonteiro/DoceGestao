@@ -727,7 +727,7 @@ $('#formLogin').onsubmit = async e => {
     }
     const { data: membro, error } = await Doce.sb.rpc('entrar_na_loja');
     if (error) throw error;
-    if (!membro) { await Doce.sb.auth.signOut(); throw new Error('Esta conta não tem acesso à loja. Peça para a dona da loja liberar.'); }
+    if (!membro) { await Doce.sb.auth.signOut(); throw new Error('Não foi possível abrir a loja desta conta. Tente novamente.'); }
     $('#senha').value = '';
     iniciar();
   } catch (err) { toast(Doce.erroAmigavel(err), true); }

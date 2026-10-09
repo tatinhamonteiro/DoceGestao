@@ -66,7 +66,8 @@ async function obterOrcamento(id) {
 // ---------------- loja ----------------
 let lojaCache = null;
 async function loja(recarregar = false) {
-  if (!lojaCache || recarregar) lojaCache = ok(await sb.from('loja_config').select('*').eq('id', 1).single());
+  if (!lojaCache) ok(await sb.rpc('entrar_na_loja')); // garante que a conta tem a própria loja
+  if (!lojaCache || recarregar) lojaCache = ok(await sb.from('lojas').select('*').single());
   return lojaCache;
 }
 const linkCliente = (l, token) => `${Doce.baseSite(l.url_publica)}/orcamento.html?t=${token}`;
@@ -167,10 +168,10 @@ async function api(metodo, url, corpo) {
       }
       const url = (corpo.urlPublica || '').trim();
       if (url && !/^https?:\/\/[^\s]+$/i.test(url)) falha('Endereço público inválido. Ex.: https://usuario.github.io/DoceGestao');
-      ok(await sb.from('loja_config').update({
+      ok(await sb.from('lojas').update({
         nome: corpo.nome.trim(), telefone_whatsapp: tel, chave_pix: (corpo.chavePix || '').trim(),
         nome_recebedor_pix: (corpo.nomeRecebedorPix || '').trim(), cidade: (corpo.cidade || '').trim(), url_publica: url,
-      }).eq('id', 1));
+      }).eq('id', lojaCache.id));
       await loja(true);
       return {};
     }
@@ -181,7 +182,7 @@ async function api(metodo, url, corpo) {
       ok(await sb.auth.updateUser({ password: corpo.nova }));
       return {};
     }
-    case 'POST logout': await sb.auth.signOut(); return {};
+    case 'POST logout': await sb.auth.signOut(); lojaCache = null; return {};
 
     // ----- clientes -----
     case 'GET clientes': {
